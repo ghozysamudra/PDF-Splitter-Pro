@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   FileText, 
   Upload, 
@@ -23,8 +22,10 @@ import { CsvRow, ProcessingStatus, FileData, NamingConfig, NamingStrategy } from
 import * as pdfjsLib from 'pdfjs-dist';
 import { PDFDocument } from 'pdf-lib';
 
-// Set up worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://esm.sh/pdfjs-dist@4.0.379/build/pdf.worker.mjs';
+// Set up worker using a reliable CDN link matching the pdfjs-dist version
+if (pdfjsLib.GlobalWorkerOptions) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
+}
 
 const App: React.FC = () => {
   const [pdfFile, setPdfFile] = useState<FileData | null>(null);
@@ -58,23 +59,30 @@ const App: React.FC = () => {
     try {
       const arrayBuffer = await file.arrayBuffer();
       
+      // Get page count using pdf-lib
       const pdfDoc = await PDFDocument.load(arrayBuffer);
       setPdfPageCount(pdfDoc.getPageCount());
 
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      // Get preview using PDF.js
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+      const pdf = await loadingTask.promise;
       const page = await pdf.getPage(1);
-      const viewport = page.getViewport({ scale: 0.5 });
+      
+      const viewport = page.getViewport({ scale: 0.8 });
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
       canvas.height = viewport.height;
       canvas.width = viewport.width;
 
       if (context) {
-        await page.render({ canvasContext: context, viewport }).promise;
+        // Fix for Error: Property 'canvas' is missing in type but required in type 'RenderParameters'
+        // We must include the canvas element reference as required by the library's types.
+        await page.render({ canvasContext: context, viewport, canvas }).promise;
         setPdfPreviewUrl(canvas.toDataURL());
       }
     } catch (err) {
       console.error("Failed to generate preview", err);
+      // Even if preview fails, we have the page count from pdf-lib
     }
   };
 
@@ -83,6 +91,8 @@ const App: React.FC = () => {
       setPdfFile({ name: file.name, file });
       setResultZip(null);
       generatePreview(file);
+    } else if (file) {
+      alert("Please upload a valid PDF file.");
     }
   };
 
@@ -130,6 +140,14 @@ const App: React.FC = () => {
       setResultZip(zipBlob);
     } catch (err) {
       console.error(err);
+      setStatus(prev => ({
+        total: prev?.total || 0,
+        current: prev?.current || 0,
+        message: 'Error during processing',
+        isComplete: false,
+        error: err instanceof Error ? err.message : 'Unknown error occurred',
+        log: [...(prev?.log || []), `ERROR: ${err instanceof Error ? err.message : 'Unknown error'}`]
+      }));
     } finally {
       setIsProcessing(false);
     }
@@ -197,11 +215,10 @@ const App: React.FC = () => {
     else handleCsvUpload(file);
   };
 
-  // Determine if numbering settings should be enabled
   const isNumberingEnabled = useMemo(() => {
     if (namingConfig.strategy === 'csv') return namingConfig.addNumberToCsv;
     if (namingConfig.strategy === 'manual') return namingConfig.addNumberToManual;
-    return true; // default and custom always have numbering
+    return true; 
   }, [namingConfig]);
 
   return (
@@ -486,7 +503,7 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Dark Mode Style Preview Area */}
+            {/* Preview Area */}
             <div className="bg-slate-900 px-8 py-8 text-white">
                <div className="flex items-center justify-between mb-6">
                  <h3 className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-3">
