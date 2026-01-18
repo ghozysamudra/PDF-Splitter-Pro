@@ -1,0 +1,5 @@
+{
+  "name": "PDF Splitter & Renamer",
+  "description": "A secure, on-device tool to split multi-page PDF files into individual pages with custom names provided via CSV files. No data ever leaves your computer.",
+  "requestFramePermissions": []
+}
